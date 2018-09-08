@@ -141,6 +141,11 @@ prompt_pure_preprompt_render() {
 		fi
 		preprompt_parts+=("$branch""%F{$git_dirty_color}"'${prompt_pure_git_dirty}%f')
 	fi
+	# Time since git commit
+	if [[ -n $prompt_pure_git_time_since_commit ]]; then
+		local midrange_color=248
+		preprompt_parts+=("%F{midrange_color}"'${prompt_pure_git_time_since_commit}%f')
+	fi
 	# Git pull/push arrows.
 	if [[ -n $prompt_pure_git_arrows ]]; then
 		preprompt_parts+=('%F{$prompt_pure_colors[git:arrow]}${prompt_pure_git_arrows}%f')
@@ -331,6 +336,11 @@ prompt_pure_async_git_arrows() {
 	command git rev-list --left-right --count HEAD...@'{u}'
 }
 
+prompt_pure_async_git_time_since_commit() {
+	setopt localoptions noshwordsplit
+	command git log --pretty=format:'%at' -1
+}
+
 prompt_pure_async_tasks() {
 	setopt localoptions noshwordsplit
 
@@ -355,6 +365,7 @@ prompt_pure_async_tasks() {
 		unset prompt_pure_git_dirty
 		unset prompt_pure_git_last_dirty_check_timestamp
 		unset prompt_pure_git_arrows
+		unset prompt_pure_git_time_since_commit
 		unset prompt_pure_git_fetch_pattern
 		prompt_pure_vcs_info[branch]=
 		prompt_pure_vcs_info[top]=
@@ -380,6 +391,7 @@ prompt_pure_async_refresh() {
 	fi
 
 	async_job "prompt_pure" prompt_pure_async_git_arrows
+	async_job "prompt_pure" prompt_pure_async_git_time_since_commit
 
 	# Do not preform `git fetch` if it is disabled or in home folder.
 	if (( ${PURE_GIT_PULL:-1} )) && [[ $prompt_pure_vcs_info[top] != $HOME ]]; then
@@ -406,6 +418,37 @@ prompt_pure_check_git_arrows() {
 
 	[[ -n $arrows ]] || return
 	typeset -g REPLY=$arrows
+}
+
+# Adapted from https://github.com/robbyrussell/oh-my-zsh/blob/f73c29a8203f8df539a72d28763bc5f521b775c0/themes/avit.zsh-theme
+prompt_pure_check_git_time_since_commit() {
+	setopt localoptions noshwordsplit
+	local last_commit=$1
+
+	# Only proceed if there is actually a commit.
+	[[ -n $last_commit ]] || return
+
+	local now=$(date +%s)
+	local seconds_since_last_commit=$((now-last_commit))
+
+	# Totals
+	local minutes=$((seconds_since_last_commit / 60))
+	local hours=$((seconds_since_last_commit/3600))
+
+	# Sub-hours and sub-minutes
+	local days=$((seconds_since_last_commit / 86400))
+	local sub_hours=$((hours % 24))
+	local sub_minutes=$((minutes % 60))
+
+	if [ $hours -gt 24 ]; then
+		local commit_age="${days}d"
+	elif [ $minutes -gt 60 ]; then
+		local commit_age="${sub_hours}h${sub_minutes}m"
+	else
+		local commit_age="${minutes}m"
+	fi
+
+	typeset -g REPLY=${commit_age}
 }
 
 prompt_pure_async_callback() {
@@ -498,6 +541,25 @@ prompt_pure_async_callback() {
 					# indicating that there is no upstream configured.
 					if [[ -n $prompt_pure_git_arrows ]]; then
 						unset prompt_pure_git_arrows
+						do_render=1
+					fi
+					;;
+			esac
+			;;
+		prompt_pure_async_git_time_since_commit)
+			case $code in
+				0)
+					local REPLY
+					prompt_pure_check_git_time_since_commit ${output}
+					if [[ $prompt_pure_git_time_since_commit != REPLY ]]; then
+						typeset -g prompt_pure_git_time_since_commit=$REPLY
+						do_render=1
+					fi
+					;;
+				*)
+					# Non-zero exit status
+					if [[ -n $prompt_pure_git_time_since_commit ]]; then
+						unset prompt_pure_git_time_since_commit
 						do_render=1
 					fi
 					;;
