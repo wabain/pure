@@ -314,6 +314,12 @@ prompt_pure_async_git_time_since_commit() {
 	command git log --pretty=format:'%at' -1
 }
 
+prompt_pure_async_render() {
+	setopt localoptions noshwordsplit
+	# Sleep to work around zle timing issues
+	sleep 0.05
+}
+
 prompt_pure_async_tasks() {
 	setopt localoptions noshwordsplit
 
@@ -425,7 +431,7 @@ prompt_pure_check_git_time_since_commit() {
 
 prompt_pure_async_callback() {
 	setopt localoptions noshwordsplit
-	local job=$1 code=$2 output=$3 exec_time=$4 next_pending=$6
+	local job=$1 code=$2 output=$3 exec_time=$4
 	local do_render=0
 
 	case $job in
@@ -528,15 +534,18 @@ prompt_pure_async_callback() {
 					;;
 			esac
 			;;
+		prompt_pure_async_render)
+			prompt_pure_preprompt_render
+			unset prompt_pure_async_render_requested
+			;;
 	esac
 
-	if (( next_pending )); then
-		(( do_render )) && typeset -g prompt_pure_async_render_requested=1
-		return
+	# Instead of re-rendering immediately, trigger an async rerender job to
+	# avoid having conflicting renders mess up zle reset-prompt
+	if (( do_render )) && [[ $prompt_pure_async_render_requested != 1 ]]; then
+		async_job "prompt_pure" prompt_pure_async_render
+		typeset -g prompt_pure_async_render_requested=1
 	fi
-
-	[[ ${prompt_pure_async_render_requested:-$do_render} = 1 ]] && prompt_pure_preprompt_render
-	unset prompt_pure_async_render_requested
 }
 
 prompt_pure_reset_prompt_symbol() {
